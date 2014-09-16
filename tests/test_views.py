@@ -7,7 +7,7 @@ from django.test.utils import override_settings
 
 from django.core import mail
 from django.core.urlresolvers import reverse
-from django.contrib.auth import get_user_model, SESSION_KEY
+from django.contrib.auth import get_user_model
 
 
 from users.forms import RegistrationForm, RegistrationFormHoneypot
@@ -50,6 +50,17 @@ class RegisterViewTest(TestCase):
         resp = self.client.post(reverse('users_register'), self.user_data)
         self.assertEqual(get_user_model().objects.all().count(), 1)
 
+    @override_settings(LOGIN_REDIRECT_URL=reverse('users_registration_complete'))
+    def test_authenticated_users_are_redirected(self):
+        user = get_user_model().objects.create_user(
+            self.user_data['email'], self.user_data['password1'], is_active=True)
+        login = self.client.login(
+            username=self.user_data['email'],
+            password=self.user_data['password1'])
+        self.assertEqual(login, True)
+        resp = self.client.post(reverse('users_register'), self.user_data)
+        self.assertRedirects(resp, reverse('users_registration_complete'))
+
     @override_settings(USERS_VERIFY_EMAIL=True)
     def test_registered_user_is_not_active(self):
         resp = self.client.post(reverse('users_register'), self.user_data)
@@ -80,3 +91,13 @@ class ActivationViewTest(TestCase):
 
         new_user = get_user_model().objects.get(email=self.user_data['email'])
         self.assertTrue(new_user.is_active)
+
+    @override_settings(USERS_VERIFY_EMAIL=True)
+    def test_activation_view_fails_as_expected(self):
+        url = reverse('users_activate', kwargs={
+            'uidb64': 'MQ',
+            'token': 'bad-69b5cdcd57c6854d1b04'
+        })
+        resp = self.client.get(url)
+        self.assertEqual(200, resp.status_code)
+        self.failUnless(resp.context['title'], 'Email confirmation unsuccessful')
